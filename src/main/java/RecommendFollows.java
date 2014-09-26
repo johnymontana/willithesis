@@ -414,7 +414,7 @@ public class RecommendFollows {
 
         for (Map<String,Object> obs : triads) {
             Double tc = tc(obs.get("u").toString(), obs.get("v").toString(), obs.get("z").toString());
-            pred.add((Integer)obs.get("v"));
+            //pred.add((Integer)obs.get("v"));
             //Map<String,Object> n = new HashMap<>();
 
             if (knn.containsKey(obs.get("v"))) {
@@ -458,12 +458,17 @@ public class RecommendFollows {
 
 
         // FIXME: return sorted k recommendations
-        for(Map.Entry<Integer,Double> entry : knn.entrySet()) {
-            if (maxEntry == null || entry.getValue() > maxEntry.getValue()) {
-                maxEntry = entry;
-                pred.add(entry.getKey());
+
+       
+            for (Map.Entry<Integer, Double> entry : knn.entrySet()) {
+                if (maxEntry == null || entry.getValue() > maxEntry.getValue()) {
+                    maxEntry = entry;
+                    //pred.add(entry.getKey());
+                }
             }
-        }
+
+
+
 
 
         // FIXME: handle possible NullPointerException if no recommendations(?)
