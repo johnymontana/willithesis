@@ -262,7 +262,7 @@ public class RecommendFollows {
             for (Integer id : this.users) {
                 try {
                     // FIXME: recommendTC(...)
-                    linkMap = recommendTC(id, k);
+                    linkMap = recommendTC(id, predicted_links);
                     if ((Boolean) linkMap.get("test_in_pred")) {
                         this.valid_count += 1;
                     }
@@ -459,7 +459,7 @@ public class RecommendFollows {
 
         // FIXME: return sorted k recommendations
 
-       
+        for (int p=0; p<predicted_links;p++) {
             for (Map.Entry<Integer, Double> entry : knn.entrySet()) {
                 if (maxEntry == null || entry.getValue() > maxEntry.getValue()) {
                     maxEntry = entry;
@@ -467,12 +467,14 @@ public class RecommendFollows {
                 }
             }
 
+            pred.add(maxEntry.getKey());
+            knn.remove(maxEntry.getKey());
 
-
+        }
 
 
         // FIXME: handle possible NullPointerException if no recommendations(?)
-        pred.add(maxEntry.getKey());
+        //pred.add(maxEntry.getKey());
         //return knn;
 
         //return pred;
@@ -495,6 +497,34 @@ public class RecommendFollows {
         System.out.println(recs);
         return recs;
 
+    }
+
+
+    /** Calculate J
+     *
+     * @param u1
+     * @param u2
+     * @return
+     */
+    public Double jaccard(Integer u1, Integer u2) throws IOException {
+
+        File file = new File("jaccard.cql");
+        String query = FileUtils.readFileToString(file);
+
+        Map<String,Object> params = new HashMap<>();
+        params.put("u1", u1);
+        params.put("u2", u2);
+
+        Double result = 0.0;
+
+        Iterator<Map<String,Object>> res = engine.execute(query, params).iterator();
+        while (res.hasNext()) {
+            Map<String,Object> row = res.next();
+            result = (Double)row.get("jaccard");
+
+        }
+
+        return result;
     }
 
 
@@ -628,8 +658,17 @@ public class RecommendFollows {
 
 
         //rec_sys.graphDB.shutdown();
+        /** Run recommender system with cross fold validation, TODO: define how results are reported
+         *
+         * @param folds             Number of cross validation folds to run
+         * @param k                 Number of neighbors to use for voting
+         * @param predicted_links   Number of predicted links to generate
+         * @param leaveout_links    Number of test links to leave out for validation
+         * @param user_count        Number of users to include in
+         */
+    //public void runWithCrossValidation(Integer folds, Integer k, Integer predicted_links, Integer leaveout_links, Integer user_count) {
 
-        rec_sys.runWithCrossValidation(10, 5, 25, 1, 100);
+        rec_sys.runWithCrossValidation(10, 5, 25, 1, 25);
         rec_sys.reportResults();
 //        rec_sys.runWithCrossValidation(10, 5, 50, 1, 10);
 //        rec_sys.reportResults();
