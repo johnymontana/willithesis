@@ -552,7 +552,7 @@ public class RecommendFollows {
         openToClosedPatterns.put("t09", "t19");
 
         String pattern_id = getTriadPattern(u, z, v);
-        Integer k = getNDegree(v);  // FIXME: check algorithm, degree
+        Integer k = getNDegree(z);  // degree of z!
         Map<String,Double> freqs = getScahllTriadFreqs();
 
         String closed_pattern_id = openToClosedPatterns.get(pattern_id);
