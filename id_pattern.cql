@@ -1,9 +1,9 @@
 // Identify triad pattern
 // u<->z<->v
 // to calc TC for u<->v
-MATCH (u:User {id: {u} })
-MATCH (z:User {id: {z} })
-MATCH (v:User {id: {v} })
+MATCH (u:User {name: {u} })
+MATCH (z:User {name: {z} })
+MATCH (v:User {name: {v} })
 
 OPTIONAL MATCH t01=(z)-->(u)-->(z)-->(v)-->(z)
 OPTIONAL MATCH t02=(z)-->(u)-->(z)-->(v)

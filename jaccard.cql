@@ -1,4 +1,4 @@
-MATCH (u1:User {id: {u1}}), (u2:User { id:{u2}})
+MATCH (u1:User {name: {u1}}), (u2:User { name:{u2}})
 MATCH (u1)-[:FOLLOWS]->(x)<-[:FOLLOWS]-(u2:User) WHERE u1 <> u2
 MATCH (u1)-[r:FOLLOWS]->(intersection)<-[:FOLLOWS]-(u2) WITH u1, u2, count(intersection) as intersect
 MATCH (u1)-[r:FOLLOWS]->(rest1) WITH u1, u2, intersect, collect(DISTINCT rest1) AS coll1

@@ -27,7 +27,7 @@ public class RecommendFollows {
     private Integer predicted_links;
     private Integer leaveout_links;
     private Integer user_count;
-    private ArrayList<Integer> users;   // user ids of users to generate recommendations
+    private ArrayList<String> users;   // user ids of users to generate recommendations
     private Integer valid_count;        // increment each time generateRecs returns true
     private Integer rec_count;          // total number of users for which recommendations were generated
     private Integer pred_link_count;    // total number of predicated links
@@ -70,9 +70,9 @@ public class RecommendFollows {
 
 
     public Integer getNDegree(String user_id) {
-        String query = "MATCH (u:User {id: {user_id}})-[r:FOLLOWS]-(x) RETURN count(DISTINCT x) as k";
+        String query = "MATCH (u:User {name: {user_id}})-[r:FOLLOWS]-(x) RETURN count(DISTINCT x) as k";
         Map<String,Object> params= new HashMap<>();
-        params.put("user_id", Integer.parseInt(user_id));
+        params.put("user_id", user_id);
 
         Integer degree = 0;
 
@@ -127,9 +127,9 @@ public class RecommendFollows {
         String query = FileUtils.readFileToString(file);
 
         Map<String,Object> params = new HashMap<>();
-        params.put("u", Integer.parseInt(u));
-        params.put("v", Integer.parseInt(v));
-        params.put("z", Integer.parseInt(z));
+        params.put("u", u);
+        params.put("v", v);
+        params.put("z", z);
 
         String result = "";
 
@@ -259,7 +259,7 @@ public class RecommendFollows {
             this.users = getRandomUsers(user_count);
             Map<String,Object> linkMap = new HashMap<>();
 
-            for (Integer id : this.users) {
+            for (String id : this.users) {
                 try {
                     // FIXME: recommendTC(...)
                     linkMap = recommendTC(id, predicted_links);
@@ -297,9 +297,9 @@ public class RecommendFollows {
      * @param num_users             Number of users to return
      * @return ArrayList<Integer>   User ids of top users
      */
-    public ArrayList<Integer> getTopUsers(Integer num_users) {
+    public ArrayList<String> getTopUsers(Integer num_users) {
 
-        ArrayList<Integer> resultsArray = new ArrayList<Integer>();
+        ArrayList<String> resultsArray = new ArrayList<>();
         Map<String, Object> params = new HashMap<String, Object>();
         params.put("num_users", num_users);
 
@@ -309,7 +309,7 @@ public class RecommendFollows {
         Iterator<Map<String, Object>> result = engine.execute(query, params).iterator();
         while(result.hasNext()) {
             Map<String, Object> row = result.next();
-            resultsArray.add((Integer)row.get("id"));
+            resultsArray.add((String)row.get("id"));
         }
 
         return resultsArray;
@@ -318,10 +318,10 @@ public class RecommendFollows {
     /** Query graph database for user_ids at random
      *
      * @param num_users             Number of users to return
-     * @return ArrayList<Integer>   User ids
+     * @return ArrayList<String>   User ids
      */
-    public ArrayList<Integer> getRandomUsers(Integer num_users) {
-        ArrayList<Integer> resultsArray = new ArrayList<Integer>();
+    public ArrayList<String> getRandomUsers(Integer num_users) {
+        ArrayList<String> resultsArray = new ArrayList<>();
         Map<String, Object> params = new HashMap<String, Object>();
         params.put("num_users", num_users);
 
@@ -337,7 +337,7 @@ public class RecommendFollows {
         Iterator<Map<String, Object>> result = engine.execute(query, params).iterator();
         while (result.hasNext()) {
             Map<String, Object> row = result.next();
-            resultsArray.add((Integer)row.get("id"));
+            resultsArray.add((String)row.get("id"));
         }
 
         return resultsArray;
@@ -348,8 +348,9 @@ public class RecommendFollows {
      * @param u
      * @return
      */
-    public ArrayList<Map<String,Object>> getTriads(Integer u) {
+    public ArrayList<Map<String,Object>> getTriads(String u) {
 
+        // FIXME: does this need to be closed triads only???
         ArrayList<Map<String,Object>> resultsArray = new ArrayList<>();
         String query = "MATCH (u:User {name: {user_id}})--(z:User)--(v:User) WHERE u<>v AND v<>z AND z<>u // find triads only \n" +
                 "RETURN u.name AS u, z.name AS z, v.name AS v LIMIT 100";
@@ -376,31 +377,31 @@ public class RecommendFollows {
      * @param user_id
      * @return
      */
-    public Map<String,Object> recommendTC(Integer user_id, Integer k) throws IOException {
+    public Map<String,Object> recommendTC(String user_id, Integer k) throws IOException {
 
         // TODO: remove link
         // TODO: get this id
 
         ArrayList<Map<String,Object>> triads = getTriads(user_id);
-        Integer rm_id = (Integer) triads.get(0).get("v");
+        //String rm_id = (String) triads.get(0).get("v");
 
         String rmQuery =
                 "MATCH (u1:User {name: {user_id}})-[:FOLLOWS]->(o) WITH o, rand() as r, u1 \n" +
                 "ORDER BY r \n" +
                 "WITH u1, o LIMIT {leaveout_links} \n" +
                 "MATCH (u1)-[r]-(o) DELETE  r WITH o,u1 \n" +
-                "RETURN o.id AS rm_id";
+                "RETURN o.name AS rm_id";
 
         Map<String,Object> params = new HashMap<String,Object>();
         params.put("leaveout_links", 1);
         params.put("user_id", user_id);
 
 
-       // Integer rm_id = 0;
+        String rm_id = "";
         Iterator<Map<String, Object>> result = engine.execute(rmQuery, params).iterator();
         while (result.hasNext()) {
             Map<String, Object> row = result.next();
-        //    rm_id = (Integer)row.get("rm_id");
+            rm_id = (String)row.get("rm_id");
         }
 
         // get array of list Integer IDs
@@ -409,8 +410,8 @@ public class RecommendFollows {
         //Integer k = getNDegree(user_id.toString()); // FIXME: use consistent type for user_id
         //ArrayList<Map<String,Object>> triads = getTriads(user_id);
         //ArrayList<Map<String,Object>> knn = new ArrayList();
-        Map<Integer, Double> knn = new HashMap<>();
-        ArrayList<Integer> pred = new ArrayList<>();
+        Map<String, Double> knn = new HashMap<>();
+        ArrayList<String> pred = new ArrayList<>();
 
         for (Map<String,Object> obs : triads) {
             Double tc = tc(obs.get("u").toString(), obs.get("v").toString(), obs.get("z").toString());
@@ -421,11 +422,11 @@ public class RecommendFollows {
                 Double val = knn.get(obs.get("v"));
                 val = val + tc;
 
-                knn.put((Integer)obs.get("v"), val);
+                knn.put((String)obs.get("v"), val);
 
                 System.out.println("+++++++++++*********** UPDATED TC **********++++++++++ " + tc.toString());
             } else {
-                knn.put((Integer)obs.get("v"), tc);
+                knn.put((String)obs.get("v"), tc);
             }
             //n.put("tc", tc);
             //n.put("u", obs.get("u"));
@@ -439,7 +440,7 @@ public class RecommendFollows {
         //System.out.println(knn);
 
         String addQuery =
-                "MATCH (u1:User {id: {user_id}}), (o:User { id: {o}}) \n" +
+                "MATCH (u1:User {name: {user_id}}), (o:User { name: {o}}) \n" +
                         "CREATE UNIQUE (u1)-[:FOLLOWS]->(o)";
 
         params.put("o", rm_id);
@@ -453,14 +454,15 @@ public class RecommendFollows {
 
 
 
-        Map.Entry<Integer,Double> maxEntry = null;
+        Map.Entry<String,Double> maxEntry = null;
 
 
 
         // FIXME: return sorted k recommendations
 
         for (int p=0; p<predicted_links;p++) {
-            for (Map.Entry<Integer, Double> entry : knn.entrySet()) {
+            maxEntry = null;
+            for (Map.Entry<String, Double> entry : knn.entrySet()) {
                 if (maxEntry == null || entry.getValue() > maxEntry.getValue()) {
                     maxEntry = entry;
                     //pred.add(entry.getKey());
@@ -481,7 +483,7 @@ public class RecommendFollows {
         Boolean test_in_pred = Boolean.FALSE;
         //for (Integer id : pred) {
 
-        for (Integer id : pred) {
+        for (String id : pred) {
             if (rm_id.equals(id)) {
                 test_in_pred = Boolean.TRUE;
             }
@@ -506,7 +508,7 @@ public class RecommendFollows {
      * @param u2
      * @return
      */
-    public Double jaccard(Integer u1, Integer u2) throws IOException {
+    public Double jaccard(String u1, String u2) throws IOException {
 
         File file = new File("jaccard.cql");
         String query = FileUtils.readFileToString(file);
@@ -576,7 +578,7 @@ public class RecommendFollows {
      *                      pred         -> the set of predicted links
      *                      u1           -> the user_id for which we are generating recommendations
      */
-    public Map<String,Object> recommend(Integer user_id) {
+    public Map<String,Object> recommend(String user_id) {
 
         Map<String, Object> params = new HashMap<String, Object>();
         params.put("user_count", user_count);
@@ -594,7 +596,7 @@ public class RecommendFollows {
                         "// take x top recommendations\n" +
                         "// replace remove edge\n" +
                         "// Is test edge in x recommendations?\n" +
-                        "MATCH (u1:User {id: {user_id}})-[:FOLLOWS]->(o) WITH o, rand() as r, u1 \n" +
+                        "MATCH (u1:User {name: {user_id}})-[:FOLLOWS]->(o) WITH o, rand() as r, u1 \n" +
                         "ORDER BY r \n" +
                         "WITH u1, o LIMIT {leaveout_links} \n" +
                         "MATCH (u1)-[r]-(o) DELETE  r WITH o,u1 \n" +
@@ -606,9 +608,9 @@ public class RecommendFollows {
                         "WITH o,u1, u2, (1.0*intersect/union) as jaccard ORDER BY jaccard DESC LIMIT {k} \n" +
                         "//CREATE (u1)<-[:Jaccard{coef: (1.0*intersect/union)}]-(u2)\n" +
                         "CREATE UNIQUE (u1)-[:FOLLOWS]->(o) WITH o, u2, u1\n" +
-                        "MATCH (u2)-[f:FOLLOWS]->(u3) WITH u1, count(f) as count_f, o.id as test, u3  ORDER BY count_f DESC LIMIT {predicted_links} \n" +
-                        "WITH collect(u3.id) as pred, test, u1 \n" +
-                        "RETURN (test IN pred) AS test_in_pred, test, pred, u1.id AS id";
+                        "MATCH (u2)-[f:FOLLOWS]->(u3) WITH u1, count(f) as count_f, o.name as test, u3  ORDER BY count_f DESC LIMIT {predicted_links} \n" +
+                        "WITH collect(u3.name) as pred, test, u1 \n" +
+                        "RETURN (test IN pred) AS test_in_pred, test, pred, u1.name AS id";
 
         Map<String, Object> resultMap = new HashMap<String, Object>();
         Iterator<Map<String, Object>> result = engine.execute(query, params).iterator();
@@ -650,7 +652,7 @@ public class RecommendFollows {
         //rec_sys.getTriadFreqs();
         //rec_sys.getClosedTriadFreqs();
 
-        System.out.println(rec_sys.tc("3", "5037", "4"));
+        System.out.println(rec_sys.tc("siemonday", "lucasdaddiego", "luis-almeida"));
 
         //System.out.println("**********************************" + rec_sys.recommendTC(3915, 10));
         //System.out.println("**********************************" + rec_sys.recommendTC(1, 10));
