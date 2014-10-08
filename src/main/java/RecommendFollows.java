@@ -304,7 +304,7 @@ public class RecommendFollows {
         params.put("num_users", num_users);
 
         String query =
-                "MATCH (u:User)-[:FOLLOWS]->(o) WITH u, count(o) as c ORDER BY c DESC RETURN u.id as id, c SKIP 50 LIMIT {num_users}";
+                "MATCH (u:User)-[:FOLLOWS]->(o) WITH u, count(o) as c ORDER BY c DESC RETURN u.name as id, c SKIP 50 LIMIT {num_users}";
 
         Iterator<Map<String, Object>> result = engine.execute(query, params).iterator();
         while(result.hasNext()) {
@@ -332,7 +332,7 @@ public class RecommendFollows {
             "WITH u1, rand() as random\n" +
             "ORDER BY random\n" +
             //"WITH u1 LIMIT 1\n" +
-            "RETURN u1.id AS id LIMIT {num_users}";
+            "RETURN u1.name AS id LIMIT {num_users}";
 
         Iterator<Map<String, Object>> result = engine.execute(query, params).iterator();
         while (result.hasNext()) {
@@ -351,8 +351,8 @@ public class RecommendFollows {
     public ArrayList<Map<String,Object>> getTriads(Integer u) {
 
         ArrayList<Map<String,Object>> resultsArray = new ArrayList<>();
-        String query = "MATCH (u:User {id: {user_id}})--(z:User)--(v:User) WHERE u<>v AND v<>z AND z<>u // find triads only \n" +
-                "RETURN u.id AS u, z.id AS z, v.id AS v LIMIT 100";
+        String query = "MATCH (u:User {name: {user_id}})--(z:User)--(v:User) WHERE u<>v AND v<>z AND z<>u // find triads only \n" +
+                "RETURN u.name AS u, z.name AS z, v.name AS v LIMIT 100";
 
         Map<String,Object> params = new HashMap<>();
         params.put("user_id", u);
@@ -385,7 +385,7 @@ public class RecommendFollows {
         Integer rm_id = (Integer) triads.get(0).get("v");
 
         String rmQuery =
-                "MATCH (u1:User {id: {user_id}})-[:FOLLOWS]->(o) WITH o, rand() as r, u1 \n" +
+                "MATCH (u1:User {name: {user_id}})-[:FOLLOWS]->(o) WITH o, rand() as r, u1 \n" +
                 "ORDER BY r \n" +
                 "WITH u1, o LIMIT {leaveout_links} \n" +
                 "MATCH (u1)-[r]-(o) DELETE  r WITH o,u1 \n" +
@@ -632,8 +632,9 @@ public class RecommendFollows {
      * @param args  Command line arguments - not used
      */
     public static void main(String[] args) throws IOException {
-        RecommendFollows rec_sys = new RecommendFollows("data/graph.db");   // Initialize graph DB
+        //RecommendFollows rec_sys = new RecommendFollows("data/graph.db");   // Initialize graph DB
 
+        RecommendFollows rec_sys = new RecommendFollows("/Users/lyonwj/Copy/willithesis/neo4j_instances/multi_modal_network/data/graph.db");
         //RecommendFollows rec_sys = new RecommendFollows("data/test_db/data/graph.db");
 
         // Run test with cross validation
@@ -668,7 +669,7 @@ public class RecommendFollows {
          */
     //public void runWithCrossValidation(Integer folds, Integer k, Integer predicted_links, Integer leaveout_links, Integer user_count) {
 
-        rec_sys.runWithCrossValidation(10, 5, 25, 1, 25);
+        rec_sys.runWithCrossValidation(10, 5, 5, 1, 25);
         rec_sys.reportResults();
 //        rec_sys.runWithCrossValidation(10, 5, 50, 1, 10);
 //        rec_sys.reportResults();
