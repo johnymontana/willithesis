@@ -326,8 +326,11 @@ public class RecommendFollows {
                     if ((Boolean) linkMap.get("test_in_pred")) {
                         this.valid_count += 1;
                     }
-                    this.rec_count += 1;
-                    this.pred_link_count += ((List) linkMap.get("pred")).size();
+
+                    if(((List)linkMap.get("pred")).size() > 0) {
+                        this.rec_count += 1;
+                        this.pred_link_count += ((List) linkMap.get("pred")).size();
+                    }
                 } catch (NullPointerException e) {
                     System.out.println("Null Pointer exception");
                     System.out.println(e.getMessage());
@@ -453,11 +456,11 @@ public class RecommendFollows {
 
         if (openOnly) {
             query = "MATCH (u:User {name: {user_id}})--(z:User)--(v:User) WHERE u<>v AND v<>z AND z<>u AND NOT (u)-->(v) // find triads only \n" +
-                    "RETURN u.name AS u, z.name AS z, v.name AS v LIMIT 5000";
+                    "RETURN u.name AS u, z.name AS z, v.name AS v LIMIT 1000";
         } else {
 
             query = "MATCH (u:User {name: {user_id}})--(z:User)--(v:User) WHERE u<>v AND v<>z AND z<>u // find triads only \n" +
-                    "RETURN u.name AS u, z.name AS z, v.name AS v LIMIT 5000";
+                    "RETURN u.name AS u, z.name AS z, v.name AS v LIMIT 1000";
         }
 
         Map<String,Object> params = new HashMap<>();
