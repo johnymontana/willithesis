@@ -855,8 +855,8 @@ public class RecommendFollows {
             //Double a = (double)fCount / (sCount + fCount);
             //Double b = (double)sCount / (sCount + fCount);
 
-            Double a = 1.0;
-            Double b = 0.0;
+            Double a = 0.0;
+            Double b = 1.0;
 
             Double tc = entry.getValue();
             Double jaccard = jaccard(user_id, entry.getKey());
