@@ -438,17 +438,27 @@ public class RecommendFollows {
         return resultsArray;
     }
 
+
     /** Find all
      *
      * @param u
      * @return
      */
-    public ArrayList<Map<String,Object>> getTriads(String u) {
+    public ArrayList<Map<String,Object>> getTriads(String u, Boolean openOnly) {
 
         // FIXME: does this need to be closed triads only???
         ArrayList<Map<String,Object>> resultsArray = new ArrayList<>();
-        String query = "MATCH (u:User {name: {user_id}})--(z:User)--(v:User) WHERE u<>v AND v<>z AND z<>u // find triads only \n" +
-                "RETURN u.name AS u, z.name AS z, v.name AS v LIMIT 100";
+
+        String query = "";
+
+        if (openOnly) {
+            query = "MATCH (u:User {name: {user_id}})--(z:User)--(v:User) WHERE u<>v AND v<>z AND z<>u AND NOT (u)-->(v) // find triads only \n" +
+                    "RETURN u.name AS u, z.name AS z, v.name AS v LIMIT 5000";
+        } else {
+
+            query = "MATCH (u:User {name: {user_id}})--(z:User)--(v:User) WHERE u<>v AND v<>z AND z<>u // find triads only \n" +
+                    "RETURN u.name AS u, z.name AS z, v.name AS v LIMIT 5000";
+        }
 
         Map<String,Object> params = new HashMap<>();
         params.put("user_id", u);
@@ -477,7 +487,7 @@ public class RecommendFollows {
         // TODO: remove link
         // TODO: get this id
 
-        ArrayList<Map<String,Object>> triads = getTriads(user_id);
+        ArrayList<Map<String,Object>> triads = getTriads(user_id, Boolean.TRUE);
         //String rm_id = (String) triads.get(0).get("v");  //FIXME: randomly select
 
 
@@ -792,7 +802,7 @@ public class RecommendFollows {
      */
     public Map<String,Object> recommendCombined(String user_id, Integer k) throws IOException {
 
-        ArrayList<Map<String,Object>> triads = getTriads(user_id);
+
 
         String rmQuery =
                 "MATCH (u1:User {name: {user_id}})-[:FOLLOWS]->(o) with o, rand() as r, u1 \n" +
@@ -816,6 +826,10 @@ public class RecommendFollows {
             Map<String, Object> row = result.next();
             rm_id = (String)row.get("rm_id");
         }
+
+        ArrayList<Map<String,Object>> triads = getTriads(user_id, Boolean.TRUE);
+
+        //Object randomItem = list.get(new Random().nextInt(list.size()))
 
         Map<String,Double> knn = new HashMap<>();
         ArrayList<String> pred = new ArrayList<>();
@@ -852,11 +866,11 @@ public class RecommendFollows {
             }
 
             // weight as proportion
-            //Double a = (double)fCount / (sCount + fCount);
-            //Double b = (double)sCount / (sCount + fCount);
+            Double a = (double)fCount / (sCount + fCount);
+            Double b = (double)sCount / (sCount + fCount);
 
-            Double a = 0.0;
-            Double b = 1.0;
+            //Double a = 0.0;
+            //Double b = 1.0;
 
             Double tc = entry.getValue();
             Double jaccard = jaccard(user_id, entry.getKey());
@@ -1020,21 +1034,21 @@ public class RecommendFollows {
          */
     //public void runWithCrossValidation(Integer folds, Integer k, Integer predicted_links, Integer leaveout_links, Integer user_count) {
 
-        rec_sys.runWithCrossValidation(2, 5, 5, 1, 100);
-        rec_sys.reportResults();
-        rec_sys.runWithCrossValidation(2, 5, 10, 1, 100);
-        rec_sys.reportResults();
-        rec_sys.runWithCrossValidation(2, 5, 20, 1, 100);
-        rec_sys.reportResults();
-
-        rec_sys.runWithCrossValidation(2, 5, 40, 1, 100);
-        rec_sys.reportResults();
-
-        rec_sys.runWithCrossValidation(2, 5, 50, 1, 100);
-        rec_sys.reportResults();
-
-        rec_sys.runWithCrossValidation(2, 5, 75, 1, 100);
-        rec_sys.reportResults();
+//        rec_sys.runWithCrossValidation(2, 5, 5, 1, 100);
+//        rec_sys.reportResults();
+//        rec_sys.runWithCrossValidation(2, 5, 10, 1, 100);
+//        rec_sys.reportResults();
+//        rec_sys.runWithCrossValidation(2, 5, 20, 1, 100);
+//        rec_sys.reportResults();
+//
+//        rec_sys.runWithCrossValidation(2, 5, 40, 1, 100);
+//        rec_sys.reportResults();
+//
+//        rec_sys.runWithCrossValidation(2, 5, 50, 1, 100);
+//        rec_sys.reportResults();
+//
+//        rec_sys.runWithCrossValidation(2, 5, 75, 1, 100);
+//        rec_sys.reportResults();
 
         rec_sys.runWithCrossValidation(2, 5, 100, 1, 100);
         rec_sys.reportResults();
