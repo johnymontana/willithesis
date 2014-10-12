@@ -11,6 +11,7 @@ import org.neo4j.cypher.javacompat.ExecutionEngine;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.factory.GraphDatabaseFactory;
 import org.apache.commons.io.FileUtils;
+import org.neo4j.graphdb.factory.GraphDatabaseSettings;
 
 import java.io.File;
 import java.io.IOException;
@@ -31,6 +32,9 @@ public class RecommendFollows {
     private Integer valid_count;        // increment each time generateRecs returns true
     private Integer rec_count;          // total number of users for which recommendations were generated
     private Integer pred_link_count;    // total number of predicated links
+    private Map<String,Integer> degreeMap; // cache the degree calculations
+    private Map<String,String> patternMap; // cache the triad pattern type
+    private Map<String,Double> jaccardMap; // cache jaccard
 
 
     /** Initialize Neo4j graph database connection
@@ -38,7 +42,34 @@ public class RecommendFollows {
      * @param DB_PATH   relative path of Neo4j data store (graph.db)
      */
     public RecommendFollows(String DB_PATH) {
-        this.graphDB = new GraphDatabaseFactory().newEmbeddedDatabase(DB_PATH);
+
+        this.degreeMap = new HashMap<String,Integer>();
+        this.patternMap = new HashMap<>();
+        this.jaccardMap = new HashMap<>();
+
+        this.graphDB = new GraphDatabaseFactory().newEmbeddedDatabaseBuilder(DB_PATH).
+               setConfig(GraphDatabaseSettings.nodestore_mapped_memory_size.name(), "100M").
+               setConfig(GraphDatabaseSettings.relationshipstore_mapped_memory_size.name(), "1000M" ).
+               setConfig(GraphDatabaseSettings.nodestore_propertystore_mapped_memory_size.name(), "400M").
+               setConfig(GraphDatabaseSettings.strings_mapped_memory_size.name(), "200M" ).
+               setConfig(GraphDatabaseSettings.arrays_mapped_memory_size.name(), "10M").
+                newGraphDatabase();
+
+//        neostore.nodestore.db.mapped_memory=100M
+//        neostore.relationshipstore.db.mapped_memory=1000M
+//        neostore.propertystore.db.mapped_memory=200M
+//        neostore.propertystore.db.strings.mapped_memory=200M
+//        neostore.propertystore.db.arrays.mapped_memory=0M
+
+//        static {
+//            LARGE_CONFIG.put( GraphDatabaseSettings.nodestore_mapped_memory_size.name(), "100M" );
+//            LARGE_CONFIG.put( GraphDatabaseSettings.relationshipstore_mapped_memory_size.name(), "300M" );
+//            LARGE_CONFIG.put( GraphDatabaseSettings.nodestore_propertystore_mapped_memory_size.name(), "400M" );
+//            LARGE_CONFIG.put( GraphDatabaseSettings.strings_mapped_memory_size.name(), "800M" );
+//            LARGE_CONFIG.put( GraphDatabaseSettings.arrays_mapped_memory_size.name(), "10M" );
+//            LARGE_CONFIG.put( GraphDatabaseSettings.dump_configuration.name(), "true" );
+//        }
+
         registerShutdownHook(graphDB);
         this.engine = new ExecutionEngine(graphDB);
         if (graphDB.isAvailable(10)) {
@@ -55,6 +86,10 @@ public class RecommendFollows {
     public void reportResults() {
         // FIXME: implement AUC(?) and Precision
 
+        //precision = (relevant documents intersect retrieved documents) / (retrieved documents)
+
+        //recall = (relevant documents intersect retrieved documents) / (relevant documents)
+
         // Simple logging for first pass implementation
         System.out.println("*************************************************");
         System.out.println("k: " + this.k);
@@ -70,22 +105,29 @@ public class RecommendFollows {
 
 
     public Integer getNDegree(String user_id) {
-        String query = "MATCH (u:User {name: {user_id}})-[r:FOLLOWS]-(x) RETURN count(DISTINCT x) as k";
-        Map<String,Object> params= new HashMap<>();
-        params.put("user_id", user_id);
 
-        Integer degree = 0;
+        if (degreeMap.containsKey(user_id)) {
+            return degreeMap.get(user_id);
+        } else {
+
+            String query = "MATCH (u:User {name: {user_id}})-[r:FOLLOWS]-(x) RETURN count(DISTINCT x) as k";
+            Map<String,Object> params= new HashMap<>();
+            params.put("user_id", user_id);
+
+            Integer degree = 0;
 
 
-        Iterator<Map<String, Object>> result = engine.execute(query, params).iterator();
-        while (result.hasNext()) {
-            Map<String, Object> row = result.next();
-            degree = Integer.parseInt(row.get("k").toString());
+            Iterator<Map<String, Object>> result = engine.execute(query, params).iterator();
+            while (result.hasNext()) {
+                Map<String, Object> row = result.next();
+                degree = Integer.parseInt(row.get("k").toString());
 
+            }
+
+            //System.out.println("Degree:" + degree.toString());
+            degreeMap.put(user_id, degree);
+            return degree;
         }
-
-        System.out.println("Degree:" + degree.toString());
-        return degree;
     }
 
     /** Return triad pattern frequency per Schall 2014
@@ -117,33 +159,51 @@ public class RecommendFollows {
         freqs.put("t18", 0.10);
         freqs.put("t19", 0.25);
 
-        System.out.println(freqs);
+        //System.out.println(freqs);
         return freqs;
     }
 
 
     public String getTriadPattern(String u, String z, String v) throws IOException {
-        File file = new File("id_pattern.cql");
-        String query = FileUtils.readFileToString(file);
 
-        Map<String,Object> params = new HashMap<>();
-        params.put("u", u);
-        params.put("v", v);
-        params.put("z", z);
+        if(patternMap.containsKey(u+z+v)) {
+            return patternMap.get(u+z+v);
+        } else {
 
-        String result = "";
+            File file = new File("id_pattern.cql");
+            String query = FileUtils.readFileToString(file);
 
-        Iterator<Map<String,Object>> res = engine.execute(query, params).iterator();
-        while (res.hasNext()) {
-            Map<String,Object> row = res.next();
-            System.out.println("ID pattern: ");
-            System.out.println(row.toString());
-            result = row.get("type").toString();
+            Map<String, Object> params = new HashMap<>();
+            params.put("u", u);
+            params.put("v", v);
+            params.put("z", z);
 
+            String result = "";
+
+            Iterator<Map<String, Object>> res = engine.execute(query, params).iterator();
+            while (res.hasNext()) {
+                Map<String, Object> row = res.next();
+                //System.out.println("ID pattern: ");
+                //System.out.println(row.toString());
+                if (!row.containsKey("type")) {
+                    System.out.println("UUUUUGGGGHHH");
+                }
+                if(row.get("type") == null) {
+                    result = "t04";
+                } else {
+                    result = (String) row.get("type");
+                }
+
+            }
+
+            if (result == null) {
+                System.out.println("UUUUGGGGGHHHHHH");
+            }
+
+            //System.out.println("IDPattern: " + result.toString());
+            patternMap.put(u + z + v, result);
+            return result;
         }
-
-        System.out.println("IDPattern: " + result.toString());
-        return result;
 
     }
 
@@ -171,7 +231,7 @@ public class RecommendFollows {
 
         }
 
-        System.out.println(resultMap.toString());
+        //System.out.println(resultMap.toString());
 
         //graphDB.shutdown();
     }
@@ -202,7 +262,7 @@ public class RecommendFollows {
 
         }
 
-        System.out.println(resultMap.toString());
+        //System.out.println(resultMap.toString());
 
         //graphDB.shutdown();
 
@@ -217,7 +277,7 @@ public class RecommendFollows {
      * @param leaveout_links    Number of test links to leave out for validation
      * @param user_count        Number of users to include in
      */
-    public void runWithCrossValidation(Integer folds, Integer k, Integer predicted_links, Integer leaveout_links, Integer user_count) {
+    public void runWithCrossValidation(Integer folds, Integer k, Integer predicted_links, Integer leaveout_links, Integer user_count) throws IOException {
         this.folds = folds;
         this.k = k;
         this.predicted_links = predicted_links;
@@ -230,15 +290,15 @@ public class RecommendFollows {
 
         // get list of users ordered by number of FOLLOWS
 
-        // FIXME: recommend using Jaccard similarity
-        // FIXME: UNCOMMENT FOR JACCARD SIMILARITY
+//        // FIXME: recommend using Jaccard similarity
+//        // FIXME: UNCOMMENT FOR JACCARD SIMILARITY
 //        for (int v=0; v < folds; v++) {
 //            this.users = getRandomUsers(user_count);
 //            Map<String,Object> linkMap = new HashMap<String,Object>();
 //
-//            for (Integer id : this.users) {
+//            for (String id : this.users) {
 //                try {
-//                    linkMap = recommend(id);
+//                    linkMap = recommendJaccard(id, predicted_links);
 //                    if ((Boolean) linkMap.get("test_in_pred")) {
 //                        this.valid_count += 1;
 //                    }
@@ -254,15 +314,15 @@ public class RecommendFollows {
 //            }
 //        }
 
-        // FIXME: recommend using TC similarity
+        // FIXME: recommend using Willimetric
         for (int v=0; v < folds; v++) {
             this.users = getRandomUsers(user_count);
             Map<String,Object> linkMap = new HashMap<>();
 
             for (String id : this.users) {
                 try {
-                    // FIXME: recommendTC(...)
-                    linkMap = recommendTC(id, predicted_links);
+
+                    linkMap = recommendCombined(id, predicted_links);
                     if ((Boolean) linkMap.get("test_in_pred")) {
                         this.valid_count += 1;
                     }
@@ -277,6 +337,32 @@ public class RecommendFollows {
                 }
             }
         }
+
+        // FIXME: recommend using TC similarity
+//        for (int v=0; v < folds; v++) {
+//            this.users = getRandomUsers(user_count);
+//            Map<String,Object> linkMap = new HashMap<>();
+//
+//            for (String id : this.users) {
+//                try {
+//                    // FIXME: recommendTC(...)
+//                    linkMap = recommendTC(id, predicted_links);
+//                    if ((Boolean) linkMap.get("test_in_pred")) {
+//                        this.valid_count += 1;
+//                    }
+//                    this.rec_count += 1;
+//                    this.pred_link_count += ((List) linkMap.get("pred")).size();
+//                } catch (NullPointerException e) {
+//                    System.out.println("Null Pointer exception");
+//                    System.out.println(e.getMessage());
+//                } catch (Exception e) {
+//                    System.out.println("Exception during TC recommendation: ");
+//                    System.out.println(e.getMessage());
+//                }
+//            }
+//        }
+
+
         //this.users = getTopUsers(user_count);
 
         //Map<String,Object> linkMap = new HashMap<String, Object>();
@@ -325,14 +411,23 @@ public class RecommendFollows {
         Map<String, Object> params = new HashMap<String, Object>();
         params.put("num_users", num_users);
 
+//        String query =
+//            "MATCH (u1:User)-[:FOLLOWS]->(x) WITH u1, count(x) as num WHERE num > 0 \n" +
+//           // "ORDER BY num DESC\n" +
+//          //  "WITH u1 LIMIT 100000\n" +
+//            "MATCH (u1)-[:STARS]->(z) WITH u1, num, count(z) as numRepos WHERE numRepos > 0 \n" +
+//            "WITH u1, rand() as random, num, numRepos ORDER BY random \n" +
+//            "WHERE num < 50 AND numRepos < 50 \n" +
+//            //"WITH u1 LIMIT 1\n" +
+//            "RETURN u1.name AS id LIMIT {num_users}";
+
         String query =
-            "MATCH (u1:User)-[:FOLLOWS]->(x) WITH u1, count(x) as num\n" +
-            "ORDER BY num DESC\n" +
-            "WITH u1 LIMIT 10000\n" +
-            "WITH u1, rand() as random\n" +
-            "ORDER BY random\n" +
-            //"WITH u1 LIMIT 1\n" +
-            "RETURN u1.name AS id LIMIT {num_users}";
+                "MATCH (u1:User) WHERE (u1)-->(:User) AND (u1)-->(:Repo) \n" +
+                "WITH u1, rand() as random ORDER BY random LIMIT {num_users}\n" +
+                "RETURN u1.name AS id";
+
+        //String query =
+        //        "MATCH (u1:User) RETURN u1.name AS id LIMIT {num_users}";
 
         Iterator<Map<String, Object>> result = engine.execute(query, params).iterator();
         while (result.hasNext()) {
@@ -368,7 +463,7 @@ public class RecommendFollows {
             obs.put("z", row.get("z"));
             resultsArray.add(obs);
         }
-        System.out.println("All triads: " + resultsArray.toString());
+        //System.out.println("All triads: " + resultsArray.toString());
         return resultsArray;
     }
 
@@ -383,7 +478,9 @@ public class RecommendFollows {
         // TODO: get this id
 
         ArrayList<Map<String,Object>> triads = getTriads(user_id);
-        //String rm_id = (String) triads.get(0).get("v");
+        //String rm_id = (String) triads.get(0).get("v");  //FIXME: randomly select
+
+
 
         String rmQuery =
                 "MATCH (u1:User {name: {user_id}})-[:FOLLOWS]->(o) WITH o, rand() as r, u1 \n" +
@@ -424,7 +521,7 @@ public class RecommendFollows {
 
                 knn.put((String)obs.get("v"), val);
 
-                System.out.println("+++++++++++*********** UPDATED TC **********++++++++++ " + tc.toString());
+                //System.out.println("+++++++++++*********** UPDATED TC **********++++++++++ " + tc.toString());
             } else {
                 knn.put((String)obs.get("v"), tc);
             }
@@ -510,23 +607,34 @@ public class RecommendFollows {
      */
     public Double jaccard(String u1, String u2) throws IOException {
 
-        File file = new File("jaccard.cql");
-        String query = FileUtils.readFileToString(file);
+        if (this.jaccardMap.containsKey(u1+u2)) {
+            return jaccardMap.get(u1+u2);
+        } else if (this.jaccardMap.containsKey(u2+u1)) {
+            return jaccardMap.get(u2+u1);
+        } else {
 
-        Map<String,Object> params = new HashMap<>();
-        params.put("u1", u1);
-        params.put("u2", u2);
+            File file = new File("jaccard.cql");
+            String query = FileUtils.readFileToString(file);
 
-        Double result = 0.0;
+            Map<String, Object> params = new HashMap<>();
+            params.put("u1", u1);
+            params.put("u2", u2);
 
-        Iterator<Map<String,Object>> res = engine.execute(query, params).iterator();
-        while (res.hasNext()) {
-            Map<String,Object> row = res.next();
-            result = (Double)row.get("jaccard");
+            Double result = 0.0;
+
+            Iterator<Map<String, Object>> res = engine.execute(query, params).iterator();
+            while (res.hasNext()) {
+                Map<String, Object> row = res.next();
+                result = (Double) row.get("jaccard");
+
+            }
+
+            this.jaccardMap.put(u1+u2, result);
+            this.jaccardMap.put(u2+u1, result);
+
+            return result;
 
         }
-
-        return result;
     }
 
 
@@ -561,12 +669,249 @@ public class RecommendFollows {
 
         Double tc_calc = freqs.get(closed_pattern_id) / freqs.get(pattern_id) * 1/k;
 
-        System.out.println("tc calc called with u: " + u + " v: " + v + " z: " + z);
-        System.out.println("TC_CALC: " + tc_calc.toString());
+        //System.out.println("tc calc called with u: " + u + " v: " + v + " z: " + z);
+        //System.out.println("TC_CALC: " + tc_calc.toString());
+        return tc_calc;
+        //return freqs.get(closed_pattern_id) / freqs.get(pattern_id) * 1/k;
 
-        return freqs.get(closed_pattern_id) / freqs.get(pattern_id) * 1/k;
+
+    }
+
+    public Map<String,Object> recommendJaccard(String user_id, Integer k) throws IOException {
+        //ArrayList<Map<String,Object>> triads = getTriads(user_id);
+
+        //String rm_id = (String) triads.get(0).get("v"); // FIXME: randomly select
+
+        String rmQuery =
+                "MATCH (u1:User {name: {user_id}})-[:FOLLOWS]->(o) WITH o, rand() as r, u1 \n" +
+                "ORDER BY r \n" +
+                "WITH u1, o LIMIT {leaveout_links} \n" +
+                "MATCH (u1)-[r]-(o) DELETE r WITH o, u1 \n" +
+                "RETURN o.name as rm_id";
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("leaveout_links", 1);
+        params.put("user_id", user_id);
+
+        String rm_id = "";
+        Iterator<Map<String, Object>> result = engine.execute(rmQuery, params).iterator();
+        while (result.hasNext()) {
+            Map<String, Object> row = result.next();
+            rm_id = (String)row.get("rm_id");
+        }
+
+        String knnQuery =
+                "MATCH (u1:User {name: {user_id}})-[:STARS]->(r:Repo)<-[:STARS]-(o:User) WITH o \n" +
+                "RETURN o.name as k_id";
+
+        ArrayList <String> kList = new ArrayList<>();
+        Iterator<Map<String, Object>> resultkList = engine.execute(knnQuery, params).iterator();
+        while (resultkList.hasNext()) {
+            Map<String, Object> row = resultkList.next();
+            kList.add((String)row.get("k_id"));
+        }
 
 
+
+        Map<String,Double> knn = new HashMap<>();
+        ArrayList<String> pred = new ArrayList<>();
+
+        for (String obs : kList) {
+            Double jaccard = jaccard(user_id, obs);
+            knn.put(obs, jaccard);
+        }
+
+        //for (Map<String,Object> obs : triads) {
+        //    Double jaccard = jaccard(obs.get("u").toString(), obs.get("v").toString());
+        //    knn.put((String)obs.get("v"), jaccard);
+        //}
+
+        String addQuery =
+                "MATCH (u1:User {name: {user_id}}), (o:User { name: {o}}) \n" +
+                        "CREATE UNIQUE (u1)-[:FOLLOWS]->(o)";
+
+        params.put("o", rm_id);
+
+        Iterator<Map<String, Object>> resultAdd = engine.execute(rmQuery, params).iterator();
+
+        Map.Entry<String,Double> maxEntry = null;
+
+
+
+        // FIXME: return sorted k recommendations
+
+        for (int p=0; p<predicted_links;p++) {
+            if (p>kList.size() - 1){ break; };
+            maxEntry = null;
+            for (Map.Entry<String, Double> entry : knn.entrySet()) {
+                if (maxEntry == null || entry.getValue() > maxEntry.getValue()) {
+                    maxEntry = entry;
+                    //pred.add(entry.getKey());
+                }
+            }
+
+            pred.add(maxEntry.getKey());
+            knn.remove(maxEntry.getKey());
+
+        }
+
+
+        // FIXME: handle possible NullPointerException if no recommendations(?)
+        //pred.add(maxEntry.getKey());
+        //return knn;
+
+        //return pred;
+        Boolean test_in_pred = Boolean.FALSE;
+        //for (Integer id : pred) {
+
+        for (String id : pred) {
+            if (rm_id.equals(id)) {
+                test_in_pred = Boolean.TRUE;
+            }
+        }
+
+        Map<String,Object> recs = new HashMap<>();
+
+        recs.put("test_in_pred", test_in_pred);
+        recs.put("test", rm_id);
+        recs.put("pred", pred);
+        recs.put("u", user_id);
+
+        System.out.println(recs);
+        return recs;
+
+
+    }
+
+    /**
+     *
+     * @param user_id
+     * @param k
+     * @return
+     * @throws IOException
+     */
+    public Map<String,Object> recommendCombined(String user_id, Integer k) throws IOException {
+
+        ArrayList<Map<String,Object>> triads = getTriads(user_id);
+
+        String rmQuery =
+                "MATCH (u1:User {name: {user_id}})-[:FOLLOWS]->(o) with o, rand() as r, u1 \n" +
+                "ORDER BY r \n" +
+                "WITH u1, o LIMIT {leaveout_links} \n" +
+                "MATCH (u1)-[r]-(o) DELETE r WITH o,u1 \n" +
+                "RETURN o.name AS rm_id";
+
+        String weightQuery =
+                "MATCH (u1:User {name: {user_id}})-[f:FOLLOWS]->(o:User) WITH u1, count(f) AS fCount \n" +
+                "MATCH (u1)-[s:STARS]->(r:Repo) WITH u1, fCount, count(r) as sCount \n" +
+                "RETURN fCount, sCount";
+
+        Map<String,Object> params = new HashMap<>();
+        params.put("leaveout_links", 1);
+        params.put("user_id", user_id);
+
+        String rm_id = "";
+        Iterator<Map<String, Object>> result = engine.execute(rmQuery, params).iterator();
+        while (result.hasNext()) {
+            Map<String, Object> row = result.next();
+            rm_id = (String)row.get("rm_id");
+        }
+
+        Map<String,Double> knn = new HashMap<>();
+        ArrayList<String> pred = new ArrayList<>();
+
+        for (Map<String,Object> obs : triads) {
+            Double tc = tc(obs.get("u").toString(), obs.get("v").toString(), obs.get("z").toString());
+
+            if (knn.containsKey(obs.get("v"))) {
+                Double val = knn.get(obs.get("v"));
+                val = val + tc;
+
+                knn.put((String)obs.get("v"), val);
+
+            } else {
+                knn.put((String)obs.get("v"), tc);
+            }
+        }
+
+
+        // for each k in knn:
+        //    calculate jaccard(user_id, k)
+        //    willimetric = a * tc + b * jaccard
+        //    update knn.put((String)obs.get("v"), willimetric)
+
+        for (Map.Entry<String, Double> entry : knn.entrySet()) {
+
+            Long sCount = (long)0;
+            Long fCount = (long)0;
+            Iterator<Map<String, Object>> abresult = engine.execute(weightQuery, params).iterator();
+            while (abresult.hasNext()) {
+                Map<String, Object> row = abresult.next();
+                sCount = (Long)row.get("sCount");
+                fCount = (Long)row.get("fCount");
+            }
+
+            // weight as proportion
+            //Double a = (double)fCount / (sCount + fCount);
+            //Double b = (double)sCount / (sCount + fCount);
+
+            Double a = 1.0;
+            Double b = 0.0;
+
+            Double tc = entry.getValue();
+            Double jaccard = jaccard(user_id, entry.getKey());
+
+            //System.out.println("Jaccard: " + jaccard.toString());
+            //System.out.println("TC: " + tc.toString());
+
+            Double willimetric = a * tc + b * jaccard;
+            knn.put(entry.getKey(), willimetric);
+        }
+
+
+        String addQuery =
+                "MATCH (u1:User {name: {user_id}}), (o:User {name: {o}}) \n" +
+                "CREATE UNIQUE (u1)-[:FOLLOWS]->(o)";
+
+        params.put("o", rm_id);
+
+        Iterator<Map<String, Object>> resultAdd = engine.execute(rmQuery, params).iterator();
+
+        Map.Entry<String,Double> maxEntry= null;
+
+        for (int p=0; p<predicted_links; p++) {
+            if (p>triads.size() - 1){ break; };
+
+
+
+            for (Map.Entry<String, Double> entry : knn.entrySet()) {
+                if (maxEntry == null || entry.getValue() > maxEntry.getValue()) {
+                    maxEntry = entry;
+                }
+            }
+
+            pred.add(maxEntry.getKey());
+            //System.out.println("WILLIMETIC: " + maxEntry.getValue().toString());
+            knn.remove(maxEntry.getKey());
+            maxEntry = null;
+        }
+
+        Boolean test_in_pred = Boolean.FALSE;
+        for (String id : pred) {
+            if (rm_id.equals(id)) {
+                test_in_pred = Boolean.TRUE;
+            }
+        }
+
+        Map<String,Object> recs = new HashMap<>();
+
+        recs.put("test_in_pred", test_in_pred);
+        recs.put("test", rm_id);
+        recs.put("pred", pred);
+        recs.put("u", user_id);
+
+        System.out.println(recs);
+        return recs;
     }
 
     /** Generate recommendations for a specific user
@@ -600,17 +945,21 @@ public class RecommendFollows {
                         "ORDER BY r \n" +
                         "WITH u1, o LIMIT {leaveout_links} \n" +
                         "MATCH (u1)-[r]-(o) DELETE  r WITH o,u1 \n" +
-                        "MATCH (u1)-[:FOLLOWS]->(x)<-[:FOLLOWS]-(u2:User) WHERE u1 <> u2 WITH u1, u2,o\n" +
-                        "MATCH (u1)-[r:FOLLOWS]->(intersection)<-[:FOLLOWS]-(u2) WITH u1, u2, count(intersection) as intersect, o\n" +
-                        "MATCH (u1)-[r:FOLLOWS]->(rest1) WITH u1, u2, intersect, collect(DISTINCT rest1) AS coll1, o\n" +
-                        "MATCH (u2)-[r:FOLLOWS]->(rest2) WITH u1, u2, collect(DISTINCT rest2) AS coll2, coll1, intersect, o\n" +
+                        "MATCH (u1)-[:STARS]->(x:Repo)<-[:STARS]-(u2:User) WHERE u1 <> u2 WITH x, u1, u2,o\n" +
+                        "WITH count(x) AS intersect, u1, u2, o \n" +
+                        //"MATCH (u1)-[r:STARS]->(intersection:Repo)<-[:STARS]-(u2) WITH u1, u2, count(intersection) as intersect, o\n" +
+                        "MATCH (u1)-[r:STARS]->(rest1:Repo) WITH u1, u2, intersect, collect(DISTINCT rest1) AS coll1, o\n" +
+                        "MATCH (u2)-[r:STARS]->(rest2:Repo) WITH u1, u2, collect(DISTINCT rest2) AS coll2, coll1, intersect, o\n" +
                         "WITH u1, u2, intersect, coll1, coll2, length(coll1 + filter(x IN coll2 WHERE NOT x IN coll1)) as union, o\n" +
                         "WITH o,u1, u2, (1.0*intersect/union) as jaccard ORDER BY jaccard DESC LIMIT {k} \n" +
                         "//CREATE (u1)<-[:Jaccard{coef: (1.0*intersect/union)}]-(u2)\n" +
                         "CREATE UNIQUE (u1)-[:FOLLOWS]->(o) WITH o, u2, u1\n" +
-                        "MATCH (u2)-[f:FOLLOWS]->(u3) WITH u1, count(f) as count_f, o.name as test, u3  ORDER BY count_f DESC LIMIT {predicted_links} \n" +
+                        "MATCH (u2)-[f:FOLLOWS]->(u3:User) WITH u1, count(f) as count_f, o.name as test, u3  ORDER BY count_f DESC LIMIT {predicted_links} \n" +
                         "WITH collect(u3.name) as pred, test, u1 \n" +
                         "RETURN (test IN pred) AS test_in_pred, test, pred, u1.name AS id";
+
+//        String query =
+//                "MATCH (u1:User {name: {user_id}})-[:STARS]->(o) WITH o, rand() as r, u1"
 
         Map<String, Object> resultMap = new HashMap<String, Object>();
         Iterator<Map<String, Object>> result = engine.execute(query, params).iterator();
@@ -652,7 +1001,7 @@ public class RecommendFollows {
         //rec_sys.getTriadFreqs();
         //rec_sys.getClosedTriadFreqs();
 
-        System.out.println(rec_sys.tc("siemonday", "lucasdaddiego", "luis-almeida"));
+        //System.out.println(rec_sys.tc("siemonday", "lucasdaddiego", "luis-almeida"));
 
         //System.out.println("**********************************" + rec_sys.recommendTC(3915, 10));
         //System.out.println("**********************************" + rec_sys.recommendTC(1, 10));
@@ -671,54 +1020,37 @@ public class RecommendFollows {
          */
     //public void runWithCrossValidation(Integer folds, Integer k, Integer predicted_links, Integer leaveout_links, Integer user_count) {
 
-        rec_sys.runWithCrossValidation(10, 5, 5, 1, 25);
+        rec_sys.runWithCrossValidation(2, 5, 5, 1, 100);
         rec_sys.reportResults();
-//        rec_sys.runWithCrossValidation(10, 5, 50, 1, 10);
-//        rec_sys.reportResults();
-//        rec_sys.runWithCrossValidation(10, 5, 100, 1, 10);
-//        rec_sys.reportResults();
-//
-//        rec_sys.runWithCrossValidation(10, 10, 25, 1, 10);
-//        rec_sys.reportResults();
-//        rec_sys.runWithCrossValidation(10, 10, 50, 1, 10);
-//        rec_sys.reportResults();
-//        rec_sys.runWithCrossValidation(10, 10, 100, 1, 10);
-//        rec_sys.reportResults();
-//
-//        rec_sys.runWithCrossValidation(10, 25, 25, 1, 10);
-//        rec_sys.reportResults();
-//        rec_sys.runWithCrossValidation(10, 25, 50, 1, 10);
-//        rec_sys.reportResults();
-//        rec_sys.runWithCrossValidation(10, 25, 100, 1, 10);
-//        rec_sys.reportResults();
-//
-//        rec_sys.runWithCrossValidation(10, 50, 25, 1, 10);
-//        rec_sys.reportResults();
-//        rec_sys.runWithCrossValidation(10, 50, 50, 1, 10);
-//        rec_sys.reportResults();
-//        rec_sys.runWithCrossValidation(10, 50, 100, 1, 10);
-//        rec_sys.reportResults();
-//
-//        rec_sys.runWithCrossValidation(10, 100, 25, 1, 10);
-//        rec_sys.reportResults();
-//        rec_sys.runWithCrossValidation(10, 100, 50, 1, 10);
-//        rec_sys.reportResults();
-//        rec_sys.runWithCrossValidation(10, 100, 100, 1, 10);
-//        rec_sys.reportResults();
-//
-//        rec_sys.runWithCrossValidation(10, 1000, 25, 1, 10);
-//        rec_sys.reportResults();
-//        rec_sys.runWithCrossValidation(10, 1000, 50, 1, 10);
-//        rec_sys.reportResults();
-//        rec_sys.runWithCrossValidation(10, 1000, 100, 1, 10);
-//        rec_sys.reportResults();
-//
-//        rec_sys.runWithCrossValidation(10, 2000, 25, 1, 10);
-//        rec_sys.reportResults();
-//        rec_sys.runWithCrossValidation(10, 2000, 50, 1, 10);
-//        rec_sys.reportResults();
-//        rec_sys.runWithCrossValidation(10, 2000, 100, 1, 10);
-//        rec_sys.reportResults();
+        rec_sys.runWithCrossValidation(2, 5, 10, 1, 100);
+        rec_sys.reportResults();
+        rec_sys.runWithCrossValidation(2, 5, 20, 1, 100);
+        rec_sys.reportResults();
+
+        rec_sys.runWithCrossValidation(2, 5, 40, 1, 100);
+        rec_sys.reportResults();
+
+        rec_sys.runWithCrossValidation(2, 5, 50, 1, 100);
+        rec_sys.reportResults();
+
+        rec_sys.runWithCrossValidation(2, 5, 75, 1, 100);
+        rec_sys.reportResults();
+
+        rec_sys.runWithCrossValidation(2, 5, 100, 1, 100);
+        rec_sys.reportResults();
+
+        rec_sys.runWithCrossValidation(2, 5, 250, 1, 100);
+        rec_sys.reportResults();
+
+        rec_sys.runWithCrossValidation(2, 5, 500, 1, 100);
+        rec_sys.reportResults();
+
+        rec_sys.runWithCrossValidation(2, 5, 1000, 1, 100);
+        rec_sys.reportResults();
+
+        rec_sys.runWithCrossValidation(2, 5, 5000, 1, 100);
+        rec_sys.reportResults();
+
 
 
 
