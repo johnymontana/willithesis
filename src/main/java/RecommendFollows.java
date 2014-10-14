@@ -814,6 +814,10 @@ public class RecommendFollows {
                 "MATCH (u1)-[r]-(o) DELETE r WITH o,u1 \n" +
                 "RETURN o.name AS rm_id";
 
+        String rmClosedTriadQuery =
+                "MATCH (u1:User {name: {user_id}})-[r:FOLLOWS]-(u2:User {name: {rm_id}}) \n" +
+                "DELETE r";
+
         String weightQuery =
                 "MATCH (u1:User {name: {user_id}})-[f:FOLLOWS]->(o:User) WITH u1, count(f) AS fCount \n" +
                 "MATCH (u1)-[s:STARS]->(r:Repo) WITH u1, fCount, count(r) as sCount \n" +
@@ -830,7 +834,7 @@ public class RecommendFollows {
         //    rm_id = (String)row.get("rm_id");
         //}
 
-        ArrayList<Map<String,Object>> triads = getTriads(user_id, Boolean.TRUE);
+
 
         ArrayList<Map<String,Object>> closedTriads = getTriads(user_id, Boolean.FALSE);
 
@@ -846,6 +850,10 @@ public class RecommendFollows {
         Map<String,Object> randomItem = closedTriads.get(new Random().nextInt(closedTriads.size()));
 
         rm_id = randomItem.get("v").toString();
+        params.put("rm_id", rm_id);
+        engine.execute(rmClosedTriadQuery, params);
+
+        ArrayList<Map<String,Object>> triads = getTriads(user_id, Boolean.TRUE);
 
         Map<String,Double> knn = new HashMap<>();
         ArrayList<String> pred = new ArrayList<>();
