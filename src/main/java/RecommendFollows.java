@@ -456,11 +456,11 @@ public class RecommendFollows {
 
         if (openOnly) {
             query = "MATCH (u:User {name: {user_id}})--(z:User)--(v:User) WHERE u<>v AND v<>z AND z<>u AND NOT (u)-->(v) // find triads only \n" +
-                    "RETURN u.name AS u, z.name AS z, v.name AS v LIMIT 100";
+                    "RETURN u.name AS u, z.name AS z, v.name AS v LIMIT 1000";
         } else {
 
             query = "MATCH (u:User {name: {user_id}})--(z:User)--(v:User) WHERE u<>v AND v<>z AND z<>u AND (u)-->(v) // find triads only \n" +
-                    "RETURN u.name AS u, z.name AS z, v.name AS v LIMIT 100";
+                    "RETURN u.name AS u, z.name AS z, v.name AS v LIMIT 1000";
         }
 
         Map<String,Object> params = new HashMap<>();
@@ -828,30 +828,30 @@ public class RecommendFollows {
         params.put("user_id", user_id);
 
         String rm_id = "";
-        //Iterator<Map<String, Object>> result = engine.execute(rmQuery, params).iterator();
-        //while (result.hasNext()) {
-        //    Map<String, Object> row = result.next();
-        //    rm_id = (String)row.get("rm_id");
-        //}
-
-
-
-        ArrayList<Map<String,Object>> closedTriads = getTriads(user_id, Boolean.FALSE);
-
-        if (closedTriads.size() == 0){
-            Map<String,Object> badRes = new HashMap<>();
-            badRes.put("u", user_id);
-            badRes.put("test", "");
-            badRes.put("test_in_pred", Boolean.FALSE);
-            badRes.put("pred", new ArrayList<>());
-            return badRes;
+        Iterator<Map<String, Object>> result = engine.execute(rmQuery, params).iterator();
+        while (result.hasNext()) {
+            Map<String, Object> row = result.next();
+            rm_id = (String)row.get("rm_id");
         }
 
-        Map<String,Object> randomItem = closedTriads.get(new Random().nextInt(closedTriads.size()));
 
-        rm_id = randomItem.get("v").toString();
+
+       // ArrayList<Map<String,Object>> closedTriads = getTriads(user_id, Boolean.FALSE);
+
+        //if (closedTriads.size() == 0){
+        //    Map<String,Object> badRes = new HashMap<>();
+        //    badRes.put("u", user_id);
+        //    badRes.put("test", "");
+        //    badRes.put("test_in_pred", Boolean.FALSE);
+        //    badRes.put("pred", new ArrayList<>());
+        //    return badRes;
+        //}
+
+        //Map<String,Object> randomItem = closedTriads.get(new Random().nextInt(closedTriads.size()));
+
+        //rm_id = randomItem.get("v").toString();
         params.put("rm_id", rm_id);
-        engine.execute(rmClosedTriadQuery, params);
+        //engine.execute(rmClosedTriadQuery, params);
 
         ArrayList<Map<String,Object>> triads = getTriads(user_id, Boolean.TRUE);
 
@@ -1023,7 +1023,7 @@ public class RecommendFollows {
     public static void main(String[] args) throws IOException {
         //RecommendFollows rec_sys = new RecommendFollows("data/graph.db");   // Initialize graph DB
 
-        RecommendFollows rec_sys = new RecommendFollows("/Users/lyonwj/Copy/willithesis/neo4j_instances/multi_modal_network/data/graph.db");
+        RecommendFollows rec_sys = new RecommendFollows("/home/lyonwj/multi_modal_network/data/graph.db");
         //RecommendFollows rec_sys = new RecommendFollows("data/test_db/data/graph.db");
 
         // Run test with cross validation
@@ -1058,35 +1058,38 @@ public class RecommendFollows {
          */
     //public void runWithCrossValidation(Integer folds, Integer k, Integer predicted_links, Integer leaveout_links, Integer user_count) {
 
-        rec_sys.runWithCrossValidation(2, 5, 5, 1, 100);
-        rec_sys.reportResults();
-        rec_sys.runWithCrossValidation(2, 5, 10, 1, 100);
-        rec_sys.reportResults();
-        rec_sys.runWithCrossValidation(2, 5, 20, 1, 100);
+        rec_sys.runWithCrossValidation(2, 5, 1, 1, 500);
         rec_sys.reportResults();
 
-        rec_sys.runWithCrossValidation(2, 5, 40, 1, 100);
+        rec_sys.runWithCrossValidation(2, 5, 5, 1, 500);
+        rec_sys.reportResults();
+        rec_sys.runWithCrossValidation(2, 5, 10, 1, 500);
+        rec_sys.reportResults();
+        rec_sys.runWithCrossValidation(2, 5, 20, 1, 500);
         rec_sys.reportResults();
 
-        rec_sys.runWithCrossValidation(2, 5, 50, 1, 100);
+        rec_sys.runWithCrossValidation(2, 5, 40, 1, 500);
         rec_sys.reportResults();
 
-        rec_sys.runWithCrossValidation(2, 5, 75, 1, 100);
+        rec_sys.runWithCrossValidation(2, 5, 50, 1, 500);
         rec_sys.reportResults();
 
-        rec_sys.runWithCrossValidation(2, 5, 100, 1, 100);
+        rec_sys.runWithCrossValidation(2, 5, 75, 1, 500);
         rec_sys.reportResults();
 
-        rec_sys.runWithCrossValidation(2, 5, 250, 1, 100);
+        rec_sys.runWithCrossValidation(2, 5, 100, 1, 500);
         rec_sys.reportResults();
 
-        rec_sys.runWithCrossValidation(2, 5, 500, 1, 100);
+        rec_sys.runWithCrossValidation(2, 5, 250, 1, 500);
         rec_sys.reportResults();
 
-        rec_sys.runWithCrossValidation(2, 5, 1000, 1, 100);
+        rec_sys.runWithCrossValidation(2, 5, 500, 1, 500);
         rec_sys.reportResults();
 
-        rec_sys.runWithCrossValidation(2, 5, 5000, 1, 100);
+        rec_sys.runWithCrossValidation(2, 5, 1000, 1, 500);
+        rec_sys.reportResults();
+
+        rec_sys.runWithCrossValidation(2, 5, 5000, 1, 500);
         rec_sys.reportResults();
 
 
